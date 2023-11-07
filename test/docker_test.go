@@ -15,7 +15,10 @@ func startContainer(cfg *container.Config, hostCfg *container.HostConfig, name s
 	}
 	defer c.Close()
 
-	hostCfg.NetworkMode = "host"
+	if !isDarwin {
+		hostCfg.NetworkMode = "host"
+	}
+
 	container, err := c.ContainerCreate(context.Background(), cfg, hostCfg, nil, nil, name)
 	if err != nil {
 		return "", err

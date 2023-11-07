@@ -88,8 +88,6 @@ func print(data Event) {
 		log.Errorln(data.Payload)
 	case DEBUG:
 		log.Debugln(data.Payload)
-	case SILENT:
-		return
 	}
 }
 

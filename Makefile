@@ -16,15 +16,13 @@ PLATFORM_LIST = \
 	linux-armv5 \
 	linux-armv6 \
 	linux-armv7 \
-	linux-arm64 \
+	linux-armv8 \
 	linux-mips-softfloat \
 	linux-mips-hardfloat \
 	linux-mipsle-softfloat \
 	linux-mipsle-hardfloat \
 	linux-mips64 \
 	linux-mips64le \
-	linux-riscv64 \
-	linux-loong64 \
 	freebsd-386 \
 	freebsd-amd64 \
 	freebsd-amd64-v3 \
@@ -35,9 +33,12 @@ WINDOWS_ARCH_LIST = \
 	windows-amd64 \
 	windows-amd64-v3 \
 	windows-arm64 \
-	windows-armv7
+	windows-arm32v7
 
 all: linux-amd64 darwin-amd64 windows-amd64 # Most used
+
+docker:
+	$(GOBUILD) -o $(BINDIR)/$(NAME)-$@
 
 darwin-amd64:
 	GOARCH=amd64 GOOS=darwin $(GOBUILD) -o $(BINDIR)/$(NAME)-$@
@@ -66,7 +67,7 @@ linux-armv6:
 linux-armv7:
 	GOARCH=arm GOOS=linux GOARM=7 $(GOBUILD) -o $(BINDIR)/$(NAME)-$@
 
-linux-arm64:
+linux-armv8:
 	GOARCH=arm64 GOOS=linux $(GOBUILD) -o $(BINDIR)/$(NAME)-$@
 
 linux-mips-softfloat:
@@ -86,12 +87,6 @@ linux-mips64:
 
 linux-mips64le:
 	GOARCH=mips64le GOOS=linux $(GOBUILD) -o $(BINDIR)/$(NAME)-$@
-
-linux-riscv64:
-	GOARCH=riscv64 GOOS=linux $(GOBUILD) -o $(BINDIR)/$(NAME)-$@
-
-linux-loong64:
-	GOARCH=loong64 GOOS=linux $(GOBUILD) -o $(BINDIR)/$(NAME)-$@
 
 freebsd-386:
 	GOARCH=386 GOOS=freebsd $(GOBUILD) -o $(BINDIR)/$(NAME)-$@
@@ -117,7 +112,7 @@ windows-amd64-v3:
 windows-arm64:
 	GOARCH=arm64 GOOS=windows $(GOBUILD) -o $(BINDIR)/$(NAME)-$@.exe
 
-windows-armv7:
+windows-arm32v7:
 	GOARCH=arm GOOS=windows GOARM=7 $(GOBUILD) -o $(BINDIR)/$(NAME)-$@.exe
 
 gz_releases=$(addsuffix .gz, $(PLATFORM_LIST))
@@ -134,15 +129,12 @@ all-arch: $(PLATFORM_LIST) $(WINDOWS_ARCH_LIST)
 
 releases: $(gz_releases) $(zip_releases)
 
-LINT_OS_LIST := darwin windows linux freebsd openbsd
-
-lint: $(foreach os,$(LINT_OS_LIST),$(os)-lint)
-%-lint:
-	GOOS=$* golangci-lint run ./...
-
-lint-fix: $(foreach os,$(LINT_OS_LIST),$(os)-lint-fix)
-%-lint-fix:
-	GOOS=$* golangci-lint run --fix ./...
+lint:
+	GOOS=darwin golangci-lint run ./...
+	GOOS=windows golangci-lint run ./...
+	GOOS=linux golangci-lint run ./...
+	GOOS=freebsd golangci-lint run ./...
+	GOOS=openbsd golangci-lint run ./...
 
 clean:
 	rm $(BINDIR)/*

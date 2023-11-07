@@ -7,7 +7,6 @@ import (
 	"github.com/Dreamacro/clash/common/batch"
 	C "github.com/Dreamacro/clash/constant"
 
-	"github.com/samber/lo"
 	"go.uber.org/atomic"
 )
 
@@ -32,20 +31,13 @@ type HealthCheck struct {
 func (hc *HealthCheck) process() {
 	ticker := time.NewTicker(time.Duration(hc.interval) * time.Second)
 
-	go hc.checkAll()
+	go hc.check()
 	for {
 		select {
 		case <-ticker.C:
 			now := time.Now().Unix()
 			if !hc.lazy || now-hc.lastTouch.Load() < int64(hc.interval) {
-				hc.checkAll()
-			} else { // lazy but still need to check not alive proxies
-				notAliveProxies := lo.Filter(hc.proxies, func(proxy C.Proxy, _ int) bool {
-					return !proxy.Alive()
-				})
-				if len(notAliveProxies) != 0 {
-					hc.check(notAliveProxies)
-				}
+				hc.check()
 			}
 		case <-hc.done:
 			ticker.Stop()
@@ -66,13 +58,9 @@ func (hc *HealthCheck) touch() {
 	hc.lastTouch.Store(time.Now().Unix())
 }
 
-func (hc *HealthCheck) checkAll() {
-	hc.check(hc.proxies)
-}
-
-func (hc *HealthCheck) check(proxies []C.Proxy) {
+func (hc *HealthCheck) check() {
 	b, _ := batch.New(context.Background(), batch.WithConcurrencyNum(10))
-	for _, proxy := range proxies {
+	for _, proxy := range hc.proxies {
 		p := proxy
 		b.Go(p.Name(), func() (any, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), defaultURLTestTimeout)

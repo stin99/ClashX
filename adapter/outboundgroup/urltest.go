@@ -66,7 +66,7 @@ func (u *URLTest) proxies(touch bool) []C.Proxy {
 }
 
 func (u *URLTest) fast(touch bool) C.Proxy {
-	elm, _, shared := u.fastSingle.Do(func() (any, error) {
+	elm, _, _ := u.fastSingle.Do(func() (any, error) {
 		proxies := u.proxies(touch)
 		fast := proxies[0]
 		min := fast.LastDelay()
@@ -95,9 +95,6 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 
 		return u.fastNode, nil
 	})
-	if shared && touch { // a shared fastSingle.Do() may cause providers untouched, so we touch them again
-		touchProviders(u.providers)
-	}
 
 	return elm.(C.Proxy)
 }
@@ -128,8 +125,10 @@ func parseURLTestOption(config map[string]any) []urlTestOption {
 	opts := []urlTestOption{}
 
 	// tolerance
-	if tolerance, ok := config["tolerance"].(int); ok {
-		opts = append(opts, urlTestWithTolerance(uint16(tolerance)))
+	if elm, ok := config["tolerance"]; ok {
+		if tolerance, ok := elm.(int); ok {
+			opts = append(opts, urlTestWithTolerance(uint16(tolerance)))
+		}
 	}
 
 	return opts

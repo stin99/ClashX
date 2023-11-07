@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/netip"
 	"strconv"
 
 	"github.com/Dreamacro/clash/component/dialer"
@@ -40,9 +39,7 @@ type Socks5Option struct {
 func (ss *Socks5) StreamConn(c net.Conn, metadata *C.Metadata) (net.Conn, error) {
 	if ss.tls {
 		cc := tls.Client(c, ss.tlsConfig)
-		ctx, cancel := context.WithTimeout(context.Background(), C.DefaultTLSTimeout)
-		defer cancel()
-		err := cc.HandshakeContext(ctx)
+		err := cc.Handshake()
 		c = cc
 		if err != nil {
 			return nil, fmt.Errorf("%s connect error: %w", ss.addr, err)
@@ -70,9 +67,7 @@ func (ss *Socks5) DialContext(ctx context.Context, metadata *C.Metadata, opts ..
 	}
 	tcpKeepAlive(c)
 
-	defer func(c net.Conn) {
-		safeConnClose(c, err)
-	}(c)
+	defer safeConnClose(c, err)
 
 	c, err = ss.StreamConn(c, metadata)
 	if err != nil {
@@ -92,15 +87,11 @@ func (ss *Socks5) ListenPacketContext(ctx context.Context, metadata *C.Metadata,
 
 	if ss.tls {
 		cc := tls.Client(c, ss.tlsConfig)
-		ctx, cancel := context.WithTimeout(context.Background(), C.DefaultTLSTimeout)
-		defer cancel()
-		err = cc.HandshakeContext(ctx)
+		err = cc.Handshake()
 		c = cc
 	}
 
-	defer func(c net.Conn) {
-		safeConnClose(c, err)
-	}(c)
+	defer safeConnClose(c, err)
 
 	tcpKeepAlive(c)
 	var user *socks5.User
@@ -111,8 +102,7 @@ func (ss *Socks5) ListenPacketContext(ctx context.Context, metadata *C.Metadata,
 		}
 	}
 
-	udpAssocateAddr := socks5.AddrFromStdAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), 0))
-	bindAddr, err := socks5.ClientHandshake(c, udpAssocateAddr, socks5.CmdUDPAssociate, user)
+	bindAddr, err := socks5.ClientHandshake(c, serializesSocksAddr(metadata), socks5.CmdUDPAssociate, user)
 	if err != nil {
 		err = fmt.Errorf("client hanshake error: %w", err)
 		return

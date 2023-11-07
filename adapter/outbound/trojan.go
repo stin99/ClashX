@@ -109,9 +109,7 @@ func (t *Trojan) DialContext(ctx context.Context, metadata *C.Metadata, opts ...
 	}
 	tcpKeepAlive(c)
 
-	defer func(c net.Conn) {
-		safeConnClose(c, err)
-	}(c)
+	defer safeConnClose(c, err)
 
 	c, err = t.StreamConn(c, metadata)
 	if err != nil {
@@ -131,17 +129,13 @@ func (t *Trojan) ListenPacketContext(ctx context.Context, metadata *C.Metadata, 
 		if err != nil {
 			return nil, fmt.Errorf("%s connect error: %w", t.addr, err)
 		}
-		defer func(c net.Conn) {
-			safeConnClose(c, err)
-		}(c)
+		defer safeConnClose(c, err)
 	} else {
 		c, err = dialer.DialContext(ctx, "tcp", t.addr, t.Base.DialOptions(opts...)...)
 		if err != nil {
 			return nil, fmt.Errorf("%s connect error: %w", t.addr, err)
 		}
-		defer func(c net.Conn) {
-			safeConnClose(c, err)
-		}(c)
+		defer safeConnClose(c, err)
 		tcpKeepAlive(c)
 		c, err = t.plainStream(c)
 		if err != nil {

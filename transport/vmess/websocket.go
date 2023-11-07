@@ -256,16 +256,10 @@ func streamWebsocketConn(conn net.Conn, c *WebsocketConfig, earlyData *bytes.Buf
 		dialer.TLSClientConfig = c.TLSConfig
 	}
 
-	u, err := url.Parse(c.Path)
-	if err != nil {
-		return nil, fmt.Errorf("parse url %s error: %w", c.Path, err)
-	}
-
 	uri := url.URL{
-		Scheme:   scheme,
-		Host:     net.JoinHostPort(c.Host, c.Port),
-		Path:     u.Path,
-		RawQuery: u.RawQuery,
+		Scheme: scheme,
+		Host:   net.JoinHostPort(c.Host, c.Port),
+		Path:   c.Path,
 	}
 
 	headers := http.Header{}

@@ -12,40 +12,31 @@ func ParseRule(tp, payload, target string, params []string) (C.Rule, error) {
 		parsed   C.Rule
 	)
 
-	ruleConfigType := C.RuleConfig(tp)
-
-	switch ruleConfigType {
-	case C.RuleConfigDomain:
+	switch tp {
+	case "DOMAIN":
 		parsed = NewDomain(payload, target)
-	case C.RuleConfigDomainSuffix:
+	case "DOMAIN-SUFFIX":
 		parsed = NewDomainSuffix(payload, target)
-	case C.RuleConfigDomainKeyword:
+	case "DOMAIN-KEYWORD":
 		parsed = NewDomainKeyword(payload, target)
-	case C.RuleConfigGeoIP:
+	case "GEOIP":
 		noResolve := HasNoResolve(params)
 		parsed = NewGEOIP(payload, target, noResolve)
-	case C.RuleConfigIPCIDR, C.RuleConfigIPCIDR6:
+	case "IP-CIDR", "IP-CIDR6":
 		noResolve := HasNoResolve(params)
 		parsed, parseErr = NewIPCIDR(payload, target, WithIPCIDRNoResolve(noResolve))
-	case C.RuleConfigSrcIPCIDR:
+	case "SRC-IP-CIDR":
 		parsed, parseErr = NewIPCIDR(payload, target, WithIPCIDRSourceIP(true), WithIPCIDRNoResolve(true))
-	case C.RuleConfigSrcPort:
-		parsed, parseErr = NewPort(payload, target, PortTypeSrc)
-	case C.RuleConfigDstPort:
-		parsed, parseErr = NewPort(payload, target, PortTypeDest)
-	case C.RuleConfigInboundPort:
-		parsed, parseErr = NewPort(payload, target, PortTypeInbound)
-	case C.RuleConfigProcessName:
+	case "SRC-PORT":
+		parsed, parseErr = NewPort(payload, target, true)
+	case "DST-PORT":
+		parsed, parseErr = NewPort(payload, target, false)
+	case "PROCESS-NAME":
 		parsed, parseErr = NewProcess(payload, target, true)
-	case C.RuleConfigProcessPath:
+	case "PROCESS-PATH":
 		parsed, parseErr = NewProcess(payload, target, false)
-	case C.RuleConfigIPSet:
-		noResolve := HasNoResolve(params)
-		parsed, parseErr = NewIPSet(payload, target, noResolve)
-	case C.RuleConfigMatch:
+	case "MATCH":
 		parsed = NewMatch(target)
-	case C.RuleConfigRuleSet, C.RuleConfigScript:
-		parseErr = fmt.Errorf("unsupported rule type %s", tp)
 	default:
 		parseErr = fmt.Errorf("unsupported rule type %s", tp)
 	}

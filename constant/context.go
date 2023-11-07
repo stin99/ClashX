@@ -3,7 +3,7 @@ package constant
 import (
 	"net"
 
-	"github.com/gofrs/uuid/v5"
+	"github.com/gofrs/uuid"
 )
 
 type PlainContext interface {

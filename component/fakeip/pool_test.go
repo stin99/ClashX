@@ -1,6 +1,7 @@
 package fakeip
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -74,27 +75,6 @@ func TestPool_Basic(t *testing.T) {
 	}
 }
 
-func TestPool_Case_Insensitive(t *testing.T) {
-	_, ipnet, _ := net.ParseCIDR("192.168.0.1/29")
-	pools, tempfile, err := createPools(Options{
-		IPNet: ipnet,
-		Size:  10,
-	})
-	assert.Nil(t, err)
-	defer os.Remove(tempfile)
-
-	for _, pool := range pools {
-		first := pool.Lookup("foo.com")
-		last := pool.Lookup("Foo.Com")
-		foo, exist := pool.LookBack(last)
-
-		assert.True(t, first.Equal(pool.Lookup("Foo.Com")))
-		assert.Equal(t, pool.Lookup("fOo.cOM"), first)
-		assert.True(t, exist)
-		assert.Equal(t, foo, "foo.com")
-	}
-}
-
 func TestPool_CycleUsed(t *testing.T) {
 	_, ipnet, _ := net.ParseCIDR("192.168.0.1/29")
 	pools, tempfile, err := createPools(Options{
@@ -105,13 +85,15 @@ func TestPool_CycleUsed(t *testing.T) {
 	defer os.Remove(tempfile)
 
 	for _, pool := range pools {
-		assert.Equal(t, net.IP{192, 168, 0, 2}, pool.Lookup("2.com"))
-		assert.Equal(t, net.IP{192, 168, 0, 3}, pool.Lookup("3.com"))
-		assert.Equal(t, net.IP{192, 168, 0, 4}, pool.Lookup("4.com"))
-		assert.Equal(t, net.IP{192, 168, 0, 5}, pool.Lookup("5.com"))
-		assert.Equal(t, net.IP{192, 168, 0, 6}, pool.Lookup("6.com"))
-		assert.Equal(t, net.IP{192, 168, 0, 2}, pool.Lookup("12.com"))
-		assert.Equal(t, net.IP{192, 168, 0, 3}, pool.Lookup("3.com"))
+		foo := pool.Lookup("foo.com")
+		bar := pool.Lookup("bar.com")
+		for i := 0; i < 3; i++ {
+			pool.Lookup(fmt.Sprintf("%d.com", i))
+		}
+		baz := pool.Lookup("baz.com")
+		next := pool.Lookup("foo.com")
+		assert.True(t, foo.Equal(baz))
+		assert.True(t, next.Equal(bar))
 	}
 }
 

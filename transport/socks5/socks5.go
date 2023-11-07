@@ -10,8 +10,6 @@ import (
 	"strconv"
 
 	"github.com/Dreamacro/clash/component/auth"
-
-	"github.com/Dreamacro/protobytes"
 )
 
 // Error represents a SOCKS error
@@ -161,7 +159,7 @@ func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, 
 		pass := string(authBuf[:passLen])
 
 		// Verify
-		if ok := authenticator.Verify(user, pass); !ok {
+		if ok := authenticator.Verify(string(user), string(pass)); !ok {
 			rw.Write([]byte{1, 1})
 			err = ErrAuth
 			return
@@ -237,12 +235,12 @@ func ClientHandshake(rw io.ReadWriter, addr Addr, command Command, user *User) (
 		}
 
 		// password protocol version
-		authMsg := protobytes.BytesWriter{}
-		authMsg.PutUint8(1)
-		authMsg.PutUint8(uint8(len(user.Username)))
-		authMsg.PutString(user.Username)
-		authMsg.PutUint8(uint8(len(user.Password)))
-		authMsg.PutString(user.Password)
+		authMsg := &bytes.Buffer{}
+		authMsg.WriteByte(1)
+		authMsg.WriteByte(uint8(len(user.Username)))
+		authMsg.WriteString(user.Username)
+		authMsg.WriteByte(uint8(len(user.Password)))
+		authMsg.WriteString(user.Password)
 
 		if _, err := rw.Write(authMsg.Bytes()); err != nil {
 			return nil, err
@@ -332,26 +330,29 @@ func SplitAddr(b []byte) Addr {
 
 // ParseAddr parses the address in string s. Returns nil if failed.
 func ParseAddr(s string) Addr {
-	buf := protobytes.BytesWriter{}
+	var addr Addr
 	host, port, err := net.SplitHostPort(s)
 	if err != nil {
 		return nil
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		if ip4 := ip.To4(); ip4 != nil {
-			buf.PutUint8(AtypIPv4)
-			buf.PutSlice(ip4)
+			addr = make([]byte, 1+net.IPv4len+2)
+			addr[0] = AtypIPv4
+			copy(addr[1:], ip4)
 		} else {
-			buf.PutUint8(AtypIPv6)
-			buf.PutSlice(ip)
+			addr = make([]byte, 1+net.IPv6len+2)
+			addr[0] = AtypIPv6
+			copy(addr[1:], ip)
 		}
 	} else {
 		if len(host) > 255 {
 			return nil
 		}
-		buf.PutUint8(AtypDomainName)
-		buf.PutUint8(byte(len(host)))
-		buf.PutString(host)
+		addr = make([]byte, 1+1+len(host)+2)
+		addr[0] = AtypDomainName
+		addr[1] = byte(len(host))
+		copy(addr[2:], host)
 	}
 
 	portnum, err := strconv.ParseUint(port, 10, 16)
@@ -359,8 +360,9 @@ func ParseAddr(s string) Addr {
 		return nil
 	}
 
-	buf.PutUint16be(uint16(portnum))
-	return Addr(buf.Bytes())
+	addr[len(addr)-2], addr[len(addr)-1] = byte(portnum>>8), byte(portnum)
+
+	return addr
 }
 
 // ParseAddrToSocksAddr parse a socks addr from net.addr
@@ -381,19 +383,20 @@ func ParseAddrToSocksAddr(addr net.Addr) Addr {
 		return ParseAddr(addr.String())
 	}
 
-	var parsed protobytes.BytesWriter
+	var parsed Addr
 	if ip4 := hostip.To4(); ip4.DefaultMask() != nil {
-		parsed = make([]byte, 0, 1+net.IPv4len+2)
-		parsed.PutUint8(AtypIPv4)
-		parsed.PutSlice(ip4)
-		parsed.PutUint16be(uint16(port))
+		parsed = make([]byte, 1+net.IPv4len+2)
+		parsed[0] = AtypIPv4
+		copy(parsed[1:], ip4)
+		binary.BigEndian.PutUint16(parsed[1+net.IPv4len:], uint16(port))
+
 	} else {
-		parsed = make([]byte, 0, 1+net.IPv6len+2)
-		parsed.PutUint8(AtypIPv6)
-		parsed.PutSlice(hostip)
-		parsed.PutUint16be(uint16(port))
+		parsed = make([]byte, 1+net.IPv6len+2)
+		parsed[0] = AtypIPv6
+		copy(parsed[1:], hostip)
+		binary.BigEndian.PutUint16(parsed[1+net.IPv6len:], uint16(port))
 	}
-	return Addr(parsed)
+	return parsed
 }
 
 func AddrFromStdAddrPort(addrPort netip.AddrPort) Addr {
@@ -413,31 +416,28 @@ func AddrFromStdAddrPort(addrPort netip.AddrPort) Addr {
 
 // DecodeUDPPacket split `packet` to addr payload, and this function is mutable with `packet`
 func DecodeUDPPacket(packet []byte) (addr Addr, payload []byte, err error) {
-	r := protobytes.BytesReader(packet)
-
-	if r.Len() < 5 {
+	if len(packet) < 5 {
 		err = errors.New("insufficient length of packet")
 		return
 	}
 
 	// packet[0] and packet[1] are reserved
-	reserved, r := r.SplitAt(2)
-	if !bytes.Equal(reserved, []byte{0, 0}) {
+	if !bytes.Equal(packet[:2], []byte{0, 0}) {
 		err = errors.New("reserved fields should be zero")
 		return
 	}
 
-	if r.ReadUint8() != 0 /* fragments */ {
+	if packet[2] != 0 /* fragments */ {
 		err = errors.New("discarding fragmented payload")
 		return
 	}
 
-	addr = SplitAddr(r)
+	addr = SplitAddr(packet[3:])
 	if addr == nil {
 		err = errors.New("failed to read UDP header")
 	}
 
-	_, payload = r.SplitAt(len(addr))
+	payload = packet[3+len(addr):]
 	return
 }
 
@@ -446,10 +446,6 @@ func EncodeUDPPacket(addr Addr, payload []byte) (packet []byte, err error) {
 		err = errors.New("address is invalid")
 		return
 	}
-	w := protobytes.BytesWriter{}
-	w.PutSlice([]byte{0, 0, 0})
-	w.PutSlice(addr)
-	w.PutSlice(payload)
-	packet = w.Bytes()
+	packet = bytes.Join([][]byte{{0, 0, 0}, addr, payload}, []byte{})
 	return
 }

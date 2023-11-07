@@ -87,22 +87,13 @@ func withMapping(mapping *cache.LruCache) middleware {
 				case *D.A:
 					ip = a.A
 					ttl = a.Hdr.Ttl
-					if !ip.IsGlobalUnicast() {
-						continue
-					}
 				case *D.AAAA:
 					ip = a.AAAA
 					ttl = a.Hdr.Ttl
-					if !ip.IsGlobalUnicast() {
-						continue
-					}
 				default:
 					continue
 				}
 
-				if ttl < 1 {
-					ttl = 1
-				}
 				mapping.SetWithExpire(ip.String(), host, time.Now().Add(time.Second*time.Duration(ttl)))
 			}
 
@@ -190,6 +181,9 @@ func newHandler(resolver *Resolver, mapper *ResolverEnhancer) handler {
 
 	if mapper.mode == C.DNSFakeIP {
 		middlewares = append(middlewares, withFakeIP(mapper.fakePool))
+	}
+
+	if mapper.mode != C.DNSNormal {
 		middlewares = append(middlewares, withMapping(mapper.mapping))
 	}
 

@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/stretchr/testify/require"
-
 	"github.com/Dreamacro/clash/adapter/outbound"
 	C "github.com/Dreamacro/clash/constant"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClash_SnellObfsHTTP(t *testing.T) {

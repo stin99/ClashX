@@ -5,7 +5,7 @@ import (
 
 	C "github.com/Dreamacro/clash/constant"
 
-	"github.com/gofrs/uuid/v5"
+	"github.com/gofrs/uuid"
 )
 
 type PacketConnContext struct {

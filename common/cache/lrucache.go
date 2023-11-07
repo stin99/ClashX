@@ -64,8 +64,8 @@ type LruCache struct {
 	onEvict        EvictCallback
 }
 
-// New creates an LruCache
-func New(options ...Option) *LruCache {
+// NewLRUCache creates an LruCache
+func NewLRUCache(options ...Option) *LruCache {
 	lc := &LruCache{
 		lru:   list.New(),
 		cache: make(map[any]*list.Element),

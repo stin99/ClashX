@@ -1,15 +1,14 @@
 package socks4
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
-	"net/netip"
 	"strconv"
 
 	"github.com/Dreamacro/clash/component/auth"
-
-	"github.com/Dreamacro/protobytes"
 )
 
 const Version = 0x04
@@ -47,16 +46,20 @@ func ServerHandshake(rw io.ReadWriter, authenticator auth.Authenticator) (addr s
 		return
 	}
 
-	r := protobytes.BytesReader(req[:])
-	if r.ReadUint8() != Version {
+	if req[0] != Version {
 		err = errVersionMismatched
 		return
 	}
 
-	if command = r.ReadUint8(); command != CmdConnect {
+	if command = req[1]; command != CmdConnect {
 		err = errCommandNotSupported
 		return
 	}
+
+	var (
+		dstIP   = req[4:8] // [4]byte
+		dstPort = req[2:4] // [2]byte
+	)
 
 	var (
 		host   string
@@ -68,9 +71,7 @@ func ServerHandshake(rw io.ReadWriter, authenticator auth.Authenticator) (addr s
 		return
 	}
 
-	dstPort := r.ReadUint16be()
-	dstAddr := r.ReadIPv4()
-	if isReservedIP(dstAddr) {
+	if isReservedIP(dstIP) {
 		var target []byte
 		if target, err = readUntilNull(rw); err != nil {
 			return
@@ -78,11 +79,11 @@ func ServerHandshake(rw io.ReadWriter, authenticator auth.Authenticator) (addr s
 		host = string(target)
 	}
 
-	port = strconv.Itoa(int(dstPort))
+	port = strconv.Itoa(int(binary.BigEndian.Uint16(dstPort)))
 	if host != "" {
 		addr = net.JoinHostPort(host, port)
 	} else {
-		addr = net.JoinHostPort(dstAddr.String(), port)
+		addr = net.JoinHostPort(net.IP(dstIP).String(), port)
 	}
 
 	// SOCKS4 only support USERID auth.
@@ -93,13 +94,13 @@ func ServerHandshake(rw io.ReadWriter, authenticator auth.Authenticator) (addr s
 		err = ErrRequestIdentdMismatched
 	}
 
-	reply := protobytes.BytesWriter(make([]byte, 0, 8))
-	reply.PutUint8(0)    // reply code
-	reply.PutUint8(code) // result code
-	reply.PutUint16be(dstPort)
-	reply.PutSlice(dstAddr.AsSlice())
+	var reply [8]byte
+	reply[0] = 0x00 // reply code
+	reply[1] = code // result code
+	copy(reply[4:8], dstIP)
+	copy(reply[2:4], dstPort)
 
-	_, wErr := rw.Write(reply.Bytes())
+	_, wErr := rw.Write(reply[:])
 	if err == nil {
 		err = wErr
 	}
@@ -117,24 +118,26 @@ func ClientHandshake(rw io.ReadWriter, addr string, command Command, userID stri
 		return err
 	}
 
-	ip, err := netip.ParseAddr(host)
-	if err != nil { // Host
-		ip = netip.AddrFrom4([4]byte{0, 0, 0, 1})
-	} else if ip.Is6() { // IPv6
+	ip := net.ParseIP(host)
+	if ip == nil /* HOST */ {
+		ip = net.IPv4(0, 0, 0, 1).To4()
+	} else if ip.To4() == nil /* IPv6 */ {
 		return errIPv6NotSupported
 	}
 
-	req := protobytes.BytesWriter{}
-	req.PutUint8(Version)
-	req.PutUint8(command)
-	req.PutUint16be(uint16(port))
-	req.PutSlice(ip.AsSlice())
-	req.PutString(userID)
-	req.PutUint8(0) /* NULL */
+	dstIP := ip.To4()
 
-	if isReservedIP(ip) /* SOCKS4A */ {
-		req.PutString(host)
-		req.PutUint8(0) /* NULL */
+	req := &bytes.Buffer{}
+	req.WriteByte(Version)
+	req.WriteByte(command)
+	binary.Write(req, binary.BigEndian, uint16(port))
+	req.Write(dstIP)
+	req.WriteString(userID)
+	req.WriteByte(0) /* NULL */
+
+	if isReservedIP(dstIP) /* SOCKS4A */ {
+		req.WriteString(host)
+		req.WriteByte(0) /* NULL */
 	}
 
 	if _, err = rw.Write(req.Bytes()); err != nil {
@@ -171,17 +174,17 @@ func ClientHandshake(rw io.ReadWriter, addr string, command Command, userID stri
 // Internet Assigned Numbers Authority -- such an address is inadmissible
 // as a destination IP address and thus should never occur if the client
 // can resolve the domain name.)
-func isReservedIP(ip netip.Addr) bool {
-	subnet := netip.PrefixFrom(
-		netip.AddrFrom4([4]byte{0, 0, 0, 0}),
-		24,
-	)
+func isReservedIP(ip net.IP) bool {
+	subnet := net.IPNet{
+		IP:   net.IPv4zero,
+		Mask: net.IPv4Mask(0xff, 0xff, 0xff, 0x00),
+	}
 
 	return !ip.IsUnspecified() && subnet.Contains(ip)
 }
 
 func readUntilNull(r io.Reader) ([]byte, error) {
-	buf := protobytes.BytesWriter{}
+	buf := &bytes.Buffer{}
 	var data [1]byte
 
 	for {
@@ -191,6 +194,6 @@ func readUntilNull(r io.Reader) ([]byte, error) {
 		if data[0] == 0 {
 			return buf.Bytes(), nil
 		}
-		buf.PutUint8(data[0])
+		buf.WriteByte(data[0])
 	}
 }

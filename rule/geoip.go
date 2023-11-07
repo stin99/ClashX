@@ -7,9 +7,6 @@ import (
 	C "github.com/Dreamacro/clash/constant"
 )
 
-// Implements C.Rule
-var _ C.Rule = (*GEOIP)(nil)
-
 type GEOIP struct {
 	country     string
 	adapter     string

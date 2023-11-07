@@ -7,9 +7,6 @@ import (
 	C "github.com/Dreamacro/clash/constant"
 )
 
-// Implements C.Rule
-var _ C.Rule = (*Process)(nil)
-
 type Process struct {
 	adapter  string
 	process  string
@@ -17,11 +14,7 @@ type Process struct {
 }
 
 func (ps *Process) RuleType() C.RuleType {
-	if ps.nameOnly {
-		return C.Process
-	}
-
-	return C.ProcessPath
+	return C.Process
 }
 
 func (ps *Process) Match(metadata *C.Metadata) bool {

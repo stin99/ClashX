@@ -1,53 +1,29 @@
 package rules
 
 import (
-	"fmt"
 	"strconv"
 
 	C "github.com/Dreamacro/clash/constant"
 )
 
-type PortType int
-
-const (
-	PortTypeSrc PortType = iota
-	PortTypeDest
-	PortTypeInbound
-)
-
-// Implements C.Rule
-var _ C.Rule = (*Port)(nil)
-
 type Port struct {
 	adapter  string
-	port     C.Port
-	portType PortType
+	port     string
+	isSource bool
 }
 
 func (p *Port) RuleType() C.RuleType {
-	switch p.portType {
-	case PortTypeSrc:
+	if p.isSource {
 		return C.SrcPort
-	case PortTypeDest:
-		return C.DstPort
-	case PortTypeInbound:
-		return C.InboundPort
-	default:
-		panic(fmt.Errorf("unknown port type: %v", p.portType))
 	}
+	return C.DstPort
 }
 
 func (p *Port) Match(metadata *C.Metadata) bool {
-	switch p.portType {
-	case PortTypeSrc:
+	if p.isSource {
 		return metadata.SrcPort == p.port
-	case PortTypeDest:
-		return metadata.DstPort == p.port
-	case PortTypeInbound:
-		return metadata.OriginDst.Port() == uint16(p.port)
-	default:
-		panic(fmt.Errorf("unknown port type: %v", p.portType))
 	}
+	return metadata.DstPort == p.port
 }
 
 func (p *Port) Adapter() string {
@@ -55,7 +31,7 @@ func (p *Port) Adapter() string {
 }
 
 func (p *Port) Payload() string {
-	return p.port.String()
+	return p.port
 }
 
 func (p *Port) ShouldResolveIP() bool {
@@ -66,14 +42,14 @@ func (p *Port) ShouldFindProcess() bool {
 	return false
 }
 
-func NewPort(port string, adapter string, portType PortType) (*Port, error) {
-	p, err := strconv.ParseUint(port, 10, 16)
+func NewPort(port string, adapter string, isSource bool) (*Port, error) {
+	_, err := strconv.ParseUint(port, 10, 16)
 	if err != nil {
 		return nil, errPayload
 	}
 	return &Port{
 		adapter:  adapter,
-		port:     C.Port(p),
-		portType: portType,
+		port:     port,
+		isSource: isSource,
 	}, nil
 }

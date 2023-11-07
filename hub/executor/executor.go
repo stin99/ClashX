@@ -18,7 +18,7 @@ import (
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/constant/provider"
 	"github.com/Dreamacro/clash/dns"
-	"github.com/Dreamacro/clash/listener"
+	P "github.com/Dreamacro/clash/listener"
 	authStore "github.com/Dreamacro/clash/listener/auth"
 	"github.com/Dreamacro/clash/log"
 	"github.com/Dreamacro/clash/tunnel"
@@ -73,41 +73,37 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateHosts(cfg.Hosts)
 	updateProfile(cfg)
 	updateGeneral(cfg.General, force)
-	updateInbounds(cfg.Inbounds, force)
 	updateDNS(cfg.DNS)
 	updateExperimental(cfg)
-	updateTunnels(cfg.Tunnels)
 }
 
 func GetGeneral() *config.General {
-	ports := listener.GetPorts()
+	ports := P.GetPorts()
 	authenticator := []string{}
 	if auth := authStore.Authenticator(); auth != nil {
 		authenticator = auth.Users()
 	}
 
 	general := &config.General{
-		LegacyInbound: config.LegacyInbound{
-			Port:        ports.Port,
-			SocksPort:   ports.SocksPort,
-			RedirPort:   ports.RedirPort,
-			TProxyPort:  ports.TProxyPort,
-			MixedPort:   ports.MixedPort,
-			AllowLan:    listener.AllowLan(),
-			BindAddress: listener.BindAddress(),
+		Inbound: config.Inbound{
+			Port:           ports.Port,
+			SocksPort:      ports.SocksPort,
+			RedirPort:      ports.RedirPort,
+			TProxyPort:     ports.TProxyPort,
+			MixedPort:      ports.MixedPort,
+			Authentication: authenticator,
+			AllowLan:       P.AllowLan(),
+			BindAddress:    P.BindAddress(),
 		},
-		Authentication: authenticator,
-		Mode:           tunnel.Mode(),
-		LogLevel:       log.Level(),
-		IPv6:           !resolver.DisableIPv6,
+		Mode:     tunnel.Mode(),
+		LogLevel: log.Level(),
+		IPv6:     !resolver.DisableIPv6,
 	}
 
 	return general
 }
 
-func updateExperimental(c *config.Config) {
-	tunnel.UDPFallbackMatch.Store(c.Experimental.UDPFallbackMatch)
-}
+func updateExperimental(c *config.Config) {}
 
 func updateDNS(c *config.DNS) {
 	if !c.Enable {
@@ -130,9 +126,13 @@ func updateDNS(c *config.DNS) {
 			IPCIDR:    c.FallbackFilter.IPCIDR,
 			Domain:    c.FallbackFilter.Domain,
 		},
-		Default:       c.DefaultNameserver,
-		Policy:        c.NameServerPolicy,
-		SearchDomains: c.SearchDomains,
+		Default: c.DefaultNameserver,
+		Policy:  c.NameServerPolicy,
+	}
+
+	// deprecated warnning
+	if cfg.EnhancedMode == C.DNSMapping {
+		log.Warnln("[DNS] %s is deprecated, please use %s instead", cfg.EnhancedMode.String(), C.DNSFakeIP.String())
 	}
 
 	r := dns.NewResolver(cfg)
@@ -161,20 +161,6 @@ func updateRules(rules []C.Rule) {
 	tunnel.UpdateRules(rules)
 }
 
-func updateTunnels(tunnels []config.Tunnel) {
-	listener.PatchTunnel(tunnels, tunnel.TCPIn(), tunnel.UDPIn())
-}
-
-func updateInbounds(inbounds []C.Inbound, force bool) {
-	if !force {
-		return
-	}
-	tcpIn := tunnel.TCPIn()
-	udpIn := tunnel.UDPIn()
-
-	listener.ReCreateListeners(inbounds, tcpIn, udpIn)
-}
-
 func updateGeneral(general *config.General, force bool) {
 	log.SetLevel(general.LogLevel)
 	tunnel.SetMode(general.Mode)
@@ -190,19 +176,19 @@ func updateGeneral(general *config.General, force bool) {
 	}
 
 	allowLan := general.AllowLan
-	listener.SetAllowLan(allowLan)
+	P.SetAllowLan(allowLan)
 
 	bindAddress := general.BindAddress
-	listener.SetBindAddress(bindAddress)
+	P.SetBindAddress(bindAddress)
 
-	ports := listener.Ports{
-		Port:       general.Port,
-		SocksPort:  general.SocksPort,
-		RedirPort:  general.RedirPort,
-		TProxyPort: general.TProxyPort,
-		MixedPort:  general.MixedPort,
-	}
-	listener.ReCreatePortsListeners(ports, tunnel.TCPIn(), tunnel.UDPIn())
+	tcpIn := tunnel.TCPIn()
+	udpIn := tunnel.UDPIn()
+
+	P.ReCreateHTTP(general.Port, tcpIn)
+	P.ReCreateSocks(general.SocksPort, tcpIn, udpIn)
+	P.ReCreateRedir(general.RedirPort, tcpIn, udpIn)
+	P.ReCreateTProxy(general.TProxyPort, tcpIn, udpIn)
+	P.ReCreateMixed(general.MixedPort, tcpIn, udpIn)
 }
 
 func updateUsers(users []auth.AuthUser) {

@@ -63,7 +63,7 @@ dns:
   fake-ip-filter:
     - .sslip.io
   nameserver:
-    - https://doh.pub/dns-query
+    - 119.29.29.29
 `
 
 	err := parseAndApply(basic)

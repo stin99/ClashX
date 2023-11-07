@@ -1,33 +1,33 @@
 package inbound
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/Dreamacro/clash/common/util"
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/transport/socks5"
 )
 
 func parseSocksAddr(target socks5.Addr) *C.Metadata {
-	metadata := &C.Metadata{}
+	metadata := &C.Metadata{
+		AddrType: int(target[0]),
+	}
 
 	switch target[0] {
 	case socks5.AtypDomainName:
 		// trim for FQDN
 		metadata.Host = strings.TrimRight(string(target[2:2+target[1]]), ".")
-		metadata.DstPort = C.Port((int(target[2+target[1]]) << 8) | int(target[2+target[1]+1]))
+		metadata.DstPort = strconv.Itoa((int(target[2+target[1]]) << 8) | int(target[2+target[1]+1]))
 	case socks5.AtypIPv4:
 		ip := net.IP(target[1 : 1+net.IPv4len])
 		metadata.DstIP = ip
-		metadata.DstPort = C.Port((int(target[1+net.IPv4len]) << 8) | int(target[1+net.IPv4len+1]))
+		metadata.DstPort = strconv.Itoa((int(target[1+net.IPv4len]) << 8) | int(target[1+net.IPv4len+1]))
 	case socks5.AtypIPv6:
 		ip := net.IP(target[1 : 1+net.IPv6len])
 		metadata.DstIP = ip
-		metadata.DstPort = C.Port((int(target[1+net.IPv6len]) << 8) | int(target[1+net.IPv6len+1]))
+		metadata.DstPort = strconv.Itoa((int(target[1+net.IPv6len]) << 8) | int(target[1+net.IPv6len+1]))
 	}
 
 	return metadata
@@ -35,32 +35,42 @@ func parseSocksAddr(target socks5.Addr) *C.Metadata {
 
 func parseHTTPAddr(request *http.Request) *C.Metadata {
 	host := request.URL.Hostname()
-	port, _ := strconv.ParseUint(util.EmptyOr(request.URL.Port(), "80"), 10, 16)
+	port := request.URL.Port()
+	if port == "" {
+		port = "80"
+	}
 
 	// trim FQDN (#737)
 	host = strings.TrimRight(host, ".")
 
 	metadata := &C.Metadata{
-		NetWork: C.TCP,
-		Host:    host,
-		DstIP:   nil,
-		DstPort: C.Port(port),
+		NetWork:  C.TCP,
+		AddrType: C.AtypDomainName,
+		Host:     host,
+		DstIP:    nil,
+		DstPort:  port,
 	}
 
-	if ip := net.ParseIP(host); ip != nil {
+	ip := net.ParseIP(host)
+	if ip != nil {
+		switch {
+		case ip.To4() == nil:
+			metadata.AddrType = C.AtypIPv6
+		default:
+			metadata.AddrType = C.AtypIPv4
+		}
 		metadata.DstIP = ip
 	}
 
 	return metadata
 }
 
-func parseAddr(addr net.Addr) (net.IP, int, error) {
-	switch a := addr.(type) {
-	case *net.TCPAddr:
-		return a.IP, a.Port, nil
-	case *net.UDPAddr:
-		return a.IP, a.Port, nil
-	default:
-		return nil, 0, fmt.Errorf("unknown address type %s", addr.String())
+func parseAddr(addr string) (net.IP, string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, "", err
 	}
+
+	ip := net.ParseIP(host)
+	return ip, port, nil
 }

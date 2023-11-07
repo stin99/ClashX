@@ -2,7 +2,7 @@ package process
 
 import (
 	"errors"
-	"net/netip"
+	"net"
 )
 
 var (
@@ -16,6 +16,6 @@ const (
 	UDP = "udp"
 )
 
-func FindProcessPath(network string, from netip.AddrPort, to netip.AddrPort) (string, error) {
-	return findProcessPath(network, from, to)
+func FindProcessName(network string, srcIP net.IP, srcPort int) (string, error) {
+	return findProcessName(network, srcIP, srcPort)
 }

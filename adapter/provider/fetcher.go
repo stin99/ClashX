@@ -21,7 +21,6 @@ type parser = func([]byte) (any, error)
 type fetcher struct {
 	name      string
 	vehicle   types.Vehicle
-	interval  time.Duration
 	updatedAt *time.Time
 	ticker    *time.Ticker
 	done      chan struct{}
@@ -40,17 +39,15 @@ func (f *fetcher) VehicleType() types.VehicleType {
 
 func (f *fetcher) Initial() (any, error) {
 	var (
-		buf               []byte
-		err               error
-		isLocal           bool
-		immediatelyUpdate bool
+		buf     []byte
+		err     error
+		isLocal bool
 	)
 	if stat, fErr := os.Stat(f.vehicle.Path()); fErr == nil {
 		buf, err = os.ReadFile(f.vehicle.Path())
 		modTime := stat.ModTime()
 		f.updatedAt = &modTime
 		isLocal = true
-		immediatelyUpdate = time.Since(modTime) > f.interval
 	} else {
 		buf, err = f.vehicle.Read()
 	}
@@ -89,7 +86,7 @@ func (f *fetcher) Initial() (any, error) {
 
 	// pull proxies automatically
 	if f.ticker != nil {
-		go f.pullLoop(immediatelyUpdate)
+		go f.pullLoop()
 	}
 
 	return proxies, nil
@@ -133,33 +130,25 @@ func (f *fetcher) Destroy() error {
 	return nil
 }
 
-func (f *fetcher) pullLoop(immediately bool) {
-	update := func() {
-		elm, same, err := f.Update()
-		if err != nil {
-			log.Warnln("[Provider] %s pull error: %s", f.Name(), err.Error())
-			return
-		}
-
-		if same {
-			log.Debugln("[Provider] %s's proxies doesn't change", f.Name())
-			return
-		}
-
-		log.Infoln("[Provider] %s's proxies update", f.Name())
-		if f.onUpdate != nil {
-			f.onUpdate(elm)
-		}
-	}
-
-	if immediately {
-		update()
-	}
-
+func (f *fetcher) pullLoop() {
 	for {
 		select {
 		case <-f.ticker.C:
-			update()
+			elm, same, err := f.Update()
+			if err != nil {
+				log.Warnln("[Provider] %s pull error: %s", f.Name(), err.Error())
+				continue
+			}
+
+			if same {
+				log.Debugln("[Provider] %s's proxies doesn't change", f.Name())
+				continue
+			}
+
+			log.Infoln("[Provider] %s's proxies update", f.Name())
+			if f.onUpdate != nil {
+				f.onUpdate(elm)
+			}
 		case <-f.done:
 			f.ticker.Stop()
 			return
@@ -189,7 +178,6 @@ func newFetcher(name string, interval time.Duration, vehicle types.Vehicle, pars
 		name:     name,
 		ticker:   ticker,
 		vehicle:  vehicle,
-		interval: interval,
 		parser:   parser,
 		done:     make(chan struct{}, 1),
 		onUpdate: onUpdate,

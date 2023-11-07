@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/Dreamacro/clash/common/cache"
+	"github.com/Dreamacro/clash/common/picker"
 	"github.com/Dreamacro/clash/component/fakeip"
 	"github.com/Dreamacro/clash/component/resolver"
 	"github.com/Dreamacro/clash/component/trie"
 	C "github.com/Dreamacro/clash/constant"
 
 	D "github.com/miekg/dns"
-	"github.com/samber/lo"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -40,26 +40,21 @@ type Resolver struct {
 	group                 singleflight.Group
 	lruCache              *cache.LruCache
 	policy                *trie.DomainTrie
-	searchDomains         []string
 }
 
-// LookupIP request with TypeA and TypeAAAA, priority return TypeA
-func (r *Resolver) LookupIP(ctx context.Context, host string) (ip []net.IP, err error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	ch := make(chan []net.IP, 1)
-
+// ResolveIP request with TypeA and TypeAAAA, priority return TypeA
+func (r *Resolver) ResolveIP(host string) (ip net.IP, err error) {
+	ch := make(chan net.IP, 1)
 	go func() {
 		defer close(ch)
-		ip, err := r.lookupIP(ctx, host, D.TypeAAAA)
+		ip, err := r.resolveIP(host, D.TypeAAAA)
 		if err != nil {
 			return
 		}
 		ch <- ip
 	}()
 
-	ip, err = r.lookupIP(ctx, host, D.TypeA)
+	ip, err = r.resolveIP(host, D.TypeA)
 	if err == nil {
 		return
 	}
@@ -72,47 +67,14 @@ func (r *Resolver) LookupIP(ctx context.Context, host string) (ip []net.IP, err 
 	return ip, nil
 }
 
-// ResolveIP request with TypeA and TypeAAAA, priority return TypeA
-func (r *Resolver) ResolveIP(host string) (ip net.IP, err error) {
-	ips, err := r.LookupIP(context.Background(), host)
-	if err != nil {
-		return nil, err
-	} else if len(ips) == 0 {
-		return nil, fmt.Errorf("%w: %s", resolver.ErrIPNotFound, host)
-	}
-	return ips[rand.Intn(len(ips))], nil
-}
-
-// LookupIPv4 request with TypeA
-func (r *Resolver) LookupIPv4(ctx context.Context, host string) ([]net.IP, error) {
-	return r.lookupIP(ctx, host, D.TypeA)
-}
-
 // ResolveIPv4 request with TypeA
 func (r *Resolver) ResolveIPv4(host string) (ip net.IP, err error) {
-	ips, err := r.lookupIP(context.Background(), host, D.TypeA)
-	if err != nil {
-		return nil, err
-	} else if len(ips) == 0 {
-		return nil, fmt.Errorf("%w: %s", resolver.ErrIPNotFound, host)
-	}
-	return ips[rand.Intn(len(ips))], nil
-}
-
-// LookupIPv6 request with TypeAAAA
-func (r *Resolver) LookupIPv6(ctx context.Context, host string) ([]net.IP, error) {
-	return r.lookupIP(ctx, host, D.TypeAAAA)
+	return r.resolveIP(host, D.TypeA)
 }
 
 // ResolveIPv6 request with TypeAAAA
 func (r *Resolver) ResolveIPv6(host string) (ip net.IP, err error) {
-	ips, err := r.lookupIP(context.Background(), host, D.TypeAAAA)
-	if err != nil {
-		return nil, err
-	} else if len(ips) == 0 {
-		return nil, fmt.Errorf("%w: %s", resolver.ErrIPNotFound, host)
-	}
-	return ips[rand.Intn(len(ips))], nil
+	return r.resolveIP(host, D.TypeAAAA)
 }
 
 func (r *Resolver) shouldIPFallback(ip net.IP) bool {
@@ -142,14 +104,9 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
 		msg = cache.(*D.Msg).Copy()
 		if expireTime.Before(now) {
 			setMsgTTL(msg, uint32(1)) // Continue fetch
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout)
-				r.exchangeWithoutCache(ctx, m)
-				cancel()
-			}()
+			go r.exchangeWithoutCache(ctx, m)
 		} else {
-			// updating TTL by subtracting common delta time from each DNS record
-			updateMsgTTL(msg, uint32(time.Until(expireTime).Seconds()))
+			setMsgTTL(msg, uint32(time.Until(expireTime).Seconds()))
 		}
 		return
 	}
@@ -167,11 +124,8 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 			}
 
 			msg := result.(*D.Msg)
-			// OPT RRs MUST NOT be cached, forwarded, or stored in or loaded from master files.
-			msg.Extra = lo.Filter(msg.Extra, func(rr D.RR, index int) bool {
-				return rr.Header().Rrtype != D.TypeOPT
-			})
-			putMsgToCache(r.lruCache, q.String(), q, msg)
+
+			putMsgToCache(r.lruCache, q.String(), msg)
 		}()
 
 		isIPReq := isIPRequest(q)
@@ -196,10 +150,31 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 }
 
 func (r *Resolver) batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.Msg, err error) {
-	ctx, cancel := context.WithTimeout(ctx, resolver.DefaultDNSTimeout)
-	defer cancel()
+	fast, ctx := picker.WithTimeout(ctx, resolver.DefaultDNSTimeout)
+	for _, client := range clients {
+		r := client
+		fast.Go(func() (any, error) {
+			m, err := r.ExchangeContext(ctx, m)
+			if err != nil {
+				return nil, err
+			} else if m.Rcode == D.RcodeServerFailure || m.Rcode == D.RcodeRefused {
+				return nil, errors.New("server failure")
+			}
+			return m, nil
+		})
+	}
 
-	return batchExchange(ctx, clients, m)
+	elm := fast.Wait()
+	if elm == nil {
+		err := errors.New("all DNS requests failed")
+		if fErr := fast.Error(); fErr != nil {
+			err = fmt.Errorf("%w, first error: %s", err, fErr.Error())
+		}
+		return nil, err
+	}
+
+	msg = elm.(*D.Msg)
+	return
 }
 
 func (r *Resolver) matchPolicy(m *D.Msg) []dnsClient {
@@ -265,10 +240,7 @@ func (r *Resolver) ipExchange(ctx context.Context, m *D.Msg) (msg *D.Msg, err er
 	res := <-msgCh
 	if res.Error == nil {
 		if ips := msgToIP(res.Msg); len(ips) != 0 {
-			shouldNotFallback := lo.EveryBy(ips, func(ip net.IP) bool {
-				return !r.shouldIPFallback(ip)
-			})
-			if shouldNotFallback {
+			if !r.shouldIPFallback(ips[0]) {
 				msg = res.Msg // no need to wait for fallback result
 				err = res.Error
 				return msg, err
@@ -281,15 +253,14 @@ func (r *Resolver) ipExchange(ctx context.Context, m *D.Msg) (msg *D.Msg, err er
 	return
 }
 
-func (r *Resolver) lookupIP(ctx context.Context, host string, dnsType uint16) ([]net.IP, error) {
-	ip := net.ParseIP(host)
+func (r *Resolver) resolveIP(host string, dnsType uint16) (ip net.IP, err error) {
+	ip = net.ParseIP(host)
 	if ip != nil {
-		ip4 := ip.To4()
-		isIPv4 := ip4 != nil
+		isIPv4 := ip.To4() != nil
 		if dnsType == D.TypeAAAA && !isIPv4 {
-			return []net.IP{ip}, nil
+			return ip, nil
 		} else if dnsType == D.TypeA && isIPv4 {
-			return []net.IP{ip4}, nil
+			return ip, nil
 		} else {
 			return nil, resolver.ErrIPVersion
 		}
@@ -298,33 +269,19 @@ func (r *Resolver) lookupIP(ctx context.Context, host string, dnsType uint16) ([
 	query := &D.Msg{}
 	query.SetQuestion(D.Fqdn(host), dnsType)
 
-	msg, err := r.ExchangeContext(ctx, query)
+	msg, err := r.Exchange(query)
 	if err != nil {
 		return nil, err
 	}
 
 	ips := msgToIP(msg)
-	if len(ips) != 0 {
-		return ips, nil
-	} else if len(r.searchDomains) == 0 {
+	ipLength := len(ips)
+	if ipLength == 0 {
 		return nil, resolver.ErrIPNotFound
 	}
 
-	// query provided search domains serially
-	for _, domain := range r.searchDomains {
-		q := &D.Msg{}
-		q.SetQuestion(D.Fqdn(fmt.Sprintf("%s.%s", host, domain)), dnsType)
-		msg, err := r.ExchangeContext(ctx, q)
-		if err != nil {
-			return nil, err
-		}
-		ips := msgToIP(msg)
-		if len(ips) != 0 {
-			return ips, nil
-		}
-	}
-
-	return nil, resolver.ErrIPNotFound
+	ip = ips[rand.Intn(ipLength)]
+	return
 }
 
 func (r *Resolver) msgToDomain(msg *D.Msg) string {
@@ -366,21 +323,19 @@ type Config struct {
 	Pool           *fakeip.Pool
 	Hosts          *trie.DomainTrie
 	Policy         map[string]NameServer
-	SearchDomains  []string
 }
 
 func NewResolver(config Config) *Resolver {
 	defaultResolver := &Resolver{
 		main:     transform(config.Default, nil),
-		lruCache: cache.New(cache.WithSize(4096), cache.WithStale(true)),
+		lruCache: cache.NewLRUCache(cache.WithSize(4096), cache.WithStale(true)),
 	}
 
 	r := &Resolver{
-		ipv6:          config.IPv6,
-		main:          transform(config.Main, defaultResolver),
-		lruCache:      cache.New(cache.WithSize(4096), cache.WithStale(true)),
-		hosts:         config.Hosts,
-		searchDomains: config.SearchDomains,
+		ipv6:     config.IPv6,
+		main:     transform(config.Main, defaultResolver),
+		lruCache: cache.NewLRUCache(cache.WithSize(4096), cache.WithStale(true)),
+		hosts:    config.Hosts,
 	}
 
 	if len(config.Fallback) != 0 {

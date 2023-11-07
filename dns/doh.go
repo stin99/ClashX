@@ -3,10 +3,7 @@ package dns
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
-	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"net/http"
 
@@ -93,13 +90,10 @@ func newDoHClient(url, iface string, r *Resolver) *dohClient {
 					return nil, err
 				}
 
-				ips, err := resolver.LookupIPWithResolver(ctx, host, r)
+				ip, err := resolver.ResolveIPWithResolver(host, r)
 				if err != nil {
 					return nil, err
-				} else if len(ips) == 0 {
-					return nil, fmt.Errorf("%w: %s", resolver.ErrIPNotFound, host)
 				}
-				ip := ips[rand.Intn(len(ips))]
 
 				options := []dialer.Option{}
 				if iface != "" {
@@ -107,10 +101,6 @@ func newDoHClient(url, iface string, r *Resolver) *dohClient {
 				}
 
 				return dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip.String(), port), options...)
-			},
-			TLSClientConfig: &tls.Config{
-				// alpn identifier, see https://tools.ietf.org/html/draft-hoffman-dprive-dns-tls-alpn-00#page-6
-				NextProtos: []string{"dns"},
 			},
 		},
 	}

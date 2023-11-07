@@ -19,7 +19,6 @@ const (
 	Snell
 	Socks5
 	Http
-	Vless
 	Vmess
 	Trojan
 
@@ -102,9 +101,8 @@ type ProxyAdapter interface {
 }
 
 type DelayHistory struct {
-	Time      time.Time `json:"time"`
-	Delay     uint16    `json:"delay"`
-	MeanDelay uint16    `json:"meanDelay"`
+	Time  time.Time `json:"time"`
+	Delay uint16    `json:"delay"`
 }
 
 type Proxy interface {
@@ -112,7 +110,7 @@ type Proxy interface {
 	Alive() bool
 	DelayHistory() []DelayHistory
 	LastDelay() uint16
-	URLTest(ctx context.Context, url string) (uint16, uint16, error)
+	URLTest(ctx context.Context, url string) (uint16, error)
 
 	// Deprecated: use DialContext instead.
 	Dial(metadata *Metadata) (Conn, error)
@@ -141,8 +139,6 @@ func (at AdapterType) String() string {
 		return "Socks5"
 	case Http:
 		return "Http"
-	case Vless:
-		return "Vless"
 	case Vmess:
 		return "Vmess"
 	case Trojan:

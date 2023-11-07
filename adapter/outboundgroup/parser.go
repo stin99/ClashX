@@ -9,8 +9,6 @@ import (
 	"github.com/Dreamacro/clash/common/structure"
 	C "github.com/Dreamacro/clash/constant"
 	types "github.com/Dreamacro/clash/constant/provider"
-
-	regexp "github.com/dlclark/regexp2"
 )
 
 var (
@@ -31,7 +29,6 @@ type GroupCommonOption struct {
 	Interval   int      `group:"interval,omitempty"`
 	Lazy       bool     `group:"lazy,omitempty"`
 	DisableUDP bool     `group:"disable-udp,omitempty"`
-	Filter     string   `group:"filter,omitempty"`
 }
 
 func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, providersMap map[string]types.ProxyProvider) (C.ProxyAdapter, error) {
@@ -48,33 +45,22 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
 		return nil, errFormat
 	}
 
-	var (
-		groupName = groupOption.Name
-		filterReg *regexp.Regexp
-	)
-
-	if groupOption.Filter != "" {
-		f, err := regexp.Compile(groupOption.Filter, regexp.None)
-		if err != nil {
-			return nil, fmt.Errorf("%s: invalid filter regex: %w", groupName, err)
-		}
-		filterReg = f
-	}
-
-	if len(groupOption.Proxies) == 0 && len(groupOption.Use) == 0 {
-		return nil, fmt.Errorf("%s: %w", groupName, errMissProxy)
-	}
+	groupName := groupOption.Name
 
 	providers := []types.ProxyProvider{}
+
+	if len(groupOption.Proxies) == 0 && len(groupOption.Use) == 0 {
+		return nil, errMissProxy
+	}
 
 	if len(groupOption.Proxies) != 0 {
 		ps, err := getProxies(proxyMap, groupOption.Proxies)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", groupName, err)
+			return nil, err
 		}
 
 		if _, ok := providersMap[groupName]; ok {
-			return nil, fmt.Errorf("%s: %w", groupName, errDuplicateProvider)
+			return nil, errDuplicateProvider
 		}
 
 		// select don't need health check
@@ -82,20 +68,20 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
 			hc := provider.NewHealthCheck(ps, "", 0, true)
 			pd, err := provider.NewCompatibleProvider(groupName, ps, hc)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", groupName, err)
+				return nil, err
 			}
 
 			providers = append(providers, pd)
 			providersMap[groupName] = pd
 		} else {
 			if groupOption.URL == "" || groupOption.Interval == 0 {
-				return nil, fmt.Errorf("%s: %w", groupName, errMissHealthCheck)
+				return nil, errMissHealthCheck
 			}
 
 			hc := provider.NewHealthCheck(ps, groupOption.URL, uint(groupOption.Interval), groupOption.Lazy)
 			pd, err := provider.NewCompatibleProvider(groupName, ps, hc)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", groupName, err)
+				return nil, err
 			}
 
 			providers = append(providers, pd)
@@ -106,14 +92,9 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
 	if len(groupOption.Use) != 0 {
 		list, err := getProviders(providersMap, groupOption.Use)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", groupName, err)
+			return nil, err
 		}
-		if filterReg != nil {
-			pd := provider.NewFilterableProvider(groupName, list, filterReg)
-			providers = append(providers, pd)
-		} else {
-			providers = append(providers, list...)
-		}
+		providers = append(providers, list...)
 	}
 
 	var group C.ProxyAdapter
@@ -131,7 +112,7 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
 	case "relay":
 		group = NewRelay(groupOption, providers)
 	default:
-		return nil, fmt.Errorf("%s %w: %s", groupName, errType, groupOption.Type)
+		return nil, fmt.Errorf("%w: %s", errType, groupOption.Type)
 	}
 
 	return group, nil

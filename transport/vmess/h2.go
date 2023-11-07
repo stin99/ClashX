@@ -30,7 +30,7 @@ func (hc *h2Conn) establishConn() error {
 	path := hc.cfg.Path
 	// TODO: connect use VMess Host instead of H2 Host
 	req := http.Request{
-		Method: http.MethodPut,
+		Method: "PUT",
 		Host:   host,
 		URL: &url.URL{
 			Scheme: "https",

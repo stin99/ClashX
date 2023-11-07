@@ -2,6 +2,7 @@ package http
 
 import (
 	"net"
+	"time"
 
 	"github.com/Dreamacro/clash/common/cache"
 	C "github.com/Dreamacro/clash/constant"
@@ -29,19 +30,19 @@ func (l *Listener) Close() error {
 	return l.listener.Close()
 }
 
-func New(addr string, in chan<- C.ConnContext) (C.Listener, error) {
+func New(addr string, in chan<- C.ConnContext) (*Listener, error) {
 	return NewWithAuthenticate(addr, in, true)
 }
 
-func NewWithAuthenticate(addr string, in chan<- C.ConnContext, authenticate bool) (C.Listener, error) {
+func NewWithAuthenticate(addr string, in chan<- C.ConnContext, authenticate bool) (*Listener, error) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
 
-	var c *cache.LruCache
+	var c *cache.Cache
 	if authenticate {
-		c = cache.New(cache.WithAge(30))
+		c = cache.New(time.Second * 30)
 	}
 
 	hl := &Listener{

@@ -10,7 +10,7 @@ linters-settings:
   gci:
     sections:
       - standard
-      - default
       - prefix(github.com/Dreamacro/clash)
+      - default
   staticcheck:
-    go: '1.21'
+    go: '1.18'

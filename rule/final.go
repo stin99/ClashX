@@ -4,9 +4,6 @@ import (
 	C "github.com/Dreamacro/clash/constant"
 )
 
-// Implements C.Rule
-var _ C.Rule = (*Match)(nil)
-
 type Match struct {
 	adapter string
 }

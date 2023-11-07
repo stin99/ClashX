@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/Dreamacro/clash/actions">
-    <img src="https://img.shields.io/github/actions/workflow/status/Dreamacro/clash/release.yml?branch=master&style=flat-square" alt="Github Actions">
+    <img src="https://img.shields.io/github/workflow/status/Dreamacro/clash/Go?style=flat-square" alt="Github Actions">
   </a>
   <a href="https://goreportcard.com/report/github.com/Dreamacro/clash">
     <img src="https://goreportcard.com/badge/github.com/Dreamacro/clash?style=flat-square">
@@ -23,28 +23,35 @@
 
 ## Features
 
-This is a general overview of the features that comes with Clash.  
+- Local HTTP/HTTPS/SOCKS server with authentication support
+- VMess, Shadowsocks, Trojan, Snell protocol support for remote connections
+- Built-in DNS server that aims to minimize DNS pollution attack impact, supports DoH/DoT upstream and fake IP.
+- Rules based off domains, GEOIP, IPCIDR or Process to forward packets to different nodes
+- Remote groups allow users to implement powerful rules. Supports automatic fallback, load balancing or auto select node based off latency
+- Remote providers, allowing users to get node lists remotely instead of hardcoding in config
+- Netfilter TCP redirecting. Deploy Clash on your Internet gateway with `iptables`.
+- Comprehensive HTTP RESTful API controller
 
-- Inbound: HTTP, HTTPS, SOCKS5 server, TUN device
-- Outbound: Shadowsocks(R), VMess, Trojan, Snell, SOCKS5, HTTP(S), Wireguard
-- Rule-based Routing: dynamic scripting, domain, IP addresses, process name and more
-- Fake-IP DNS: minimises impact on DNS pollution and improves network performance
-- Transparent Proxy: Redirect TCP and TProxy TCP/UDP with automatic route table/rule management
-- Proxy Groups: automatic fallback, load balancing or latency testing
-- Remote Providers: load remote proxy lists dynamically
-- RESTful API: update configuration in-place via a comprehensive API
+## Premium Features
 
-*Some of the features may only be available in the [Premium core](https://dreamacro.github.io/clash/premium/introduction.html).*
+- TUN mode on macOS, Linux and Windows. [Doc](https://github.com/Dreamacro/clash/wiki/premium-core-features#tun-device)
+- Match your tunnel by [Script](https://github.com/Dreamacro/clash/wiki/premium-core-features#script)
+- [Rule Provider](https://github.com/Dreamacro/clash/wiki/premium-core-features#rule-providers)
 
-## Documentation
+## Getting Started
+Documentations are now moved to [GitHub Wiki](https://github.com/Dreamacro/clash/wiki).
 
-You can find the latest documentation at [https://dreamacro.github.io/clash/](https://dreamacro.github.io/clash/).
+## Premium Release
+[Release](https://github.com/Dreamacro/clash/releases/tag/premium)
+
+## Development
+If you want to build an application that uses clash as a library, check out the the [GitHub Wiki](https://github.com/Dreamacro/clash/wiki/use-clash-as-a-library)
 
 ## Credits
 
-- [riobard/go-shadowsocks2](https://github.com/riobard/go-shadowsocks2)
-- [v2ray/v2ray-core](https://github.com/v2ray/v2ray-core)
-- [WireGuard/wireguard-go](https://github.com/WireGuard/wireguard-go)
+* [riobard/go-shadowsocks2](https://github.com/riobard/go-shadowsocks2)
+* [v2ray/v2ray-core](https://github.com/v2ray/v2ray-core)
+* [WireGuard/wireguard-go](https://github.com/WireGuard/wireguard-go)
 
 ## License
 

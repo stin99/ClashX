@@ -4,15 +4,11 @@ import (
 	"os"
 	P "path"
 	"path/filepath"
-	"strings"
 )
 
 const Name = "clash"
 
 // Path is used to get the configuration path
-//
-// on Unix systems, `$HOME/.config/clash`.
-// on Windows, `%USERPROFILE%/.config/clash`.
 var Path = func() *path {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -20,12 +16,6 @@ var Path = func() *path {
 	}
 
 	homeDir = P.Join(homeDir, ".config", Name)
-
-	if _, err = os.Stat(homeDir); err != nil {
-		if configHome, ok := os.LookupEnv("XDG_CONFIG_HOME"); ok {
-			homeDir = P.Join(configHome, Name)
-		}
-	}
 	return &path{homeDir: homeDir, configFile: "config.yaml"}
 }()
 
@@ -59,18 +49,6 @@ func (p *path) Resolve(path string) string {
 	}
 
 	return path
-}
-
-// IsSubPath return true if path is a subpath of homedir
-func (p *path) IsSubPath(path string) bool {
-	homedir := p.HomeDir()
-	path = p.Resolve(path)
-	rel, err := filepath.Rel(homedir, path)
-	if err != nil {
-		return false
-	}
-
-	return !strings.Contains(rel, "..")
 }
 
 func (p *path) MMDB() string {

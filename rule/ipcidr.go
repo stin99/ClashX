@@ -20,9 +20,6 @@ func WithIPCIDRNoResolve(noResolve bool) IPCIDROption {
 	}
 }
 
-// Implements C.Rule
-var _ C.Rule = (*IPCIDR)(nil)
-
 type IPCIDR struct {
 	ipnet       *net.IPNet
 	adapter     string

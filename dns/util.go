@@ -1,63 +1,31 @@
 package dns
 
 import (
-	"context"
 	"crypto/tls"
-	"errors"
-	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/Dreamacro/clash/common/cache"
-	"github.com/Dreamacro/clash/common/picker"
 	"github.com/Dreamacro/clash/log"
 
 	D "github.com/miekg/dns"
-	"github.com/samber/lo"
 )
 
-const serverFailureCacheTTL uint32 = 5
-
-func minimalTTL(records []D.RR) uint32 {
-	rr := lo.MinBy(records, func(r1 D.RR, r2 D.RR) bool {
-		return r1.Header().Ttl < r2.Header().Ttl
-	})
-	if rr == nil {
-		return 0
-	}
-	return rr.Header().Ttl
-}
-
-func updateTTL(records []D.RR, ttl uint32) {
-	if len(records) == 0 {
-		return
-	}
-	delta := minimalTTL(records) - ttl
-	for i := range records {
-		records[i].Header().Ttl = lo.Clamp(records[i].Header().Ttl-delta, 1, records[i].Header().Ttl)
-	}
-}
-
-func putMsgToCache(c *cache.LruCache, key string, q D.Question, msg *D.Msg) {
-	// skip dns cache for acme challenge
-	if q.Qtype == D.TypeTXT && strings.HasPrefix(q.Name, "_acme-challenge.") {
-		log.Debugln("[DNS] dns cache ignored because of acme challenge for: %s", q.Name)
-		return
-	}
-
+func putMsgToCache(c *cache.LruCache, key string, msg *D.Msg) {
 	var ttl uint32
-	if msg.Rcode == D.RcodeServerFailure {
-		// [...] a resolver MAY cache a server failure response.
-		// If it does so it MUST NOT cache it for longer than five (5) minutes [...]
-		ttl = serverFailureCacheTTL
-	} else {
-		ttl = minimalTTL(append(append(msg.Answer, msg.Ns...), msg.Extra...))
-	}
-	if ttl == 0 {
+	switch {
+	case len(msg.Answer) != 0:
+		ttl = msg.Answer[0].Header().Ttl
+	case len(msg.Ns) != 0:
+		ttl = msg.Ns[0].Header().Ttl
+	case len(msg.Extra) != 0:
+		ttl = msg.Extra[0].Header().Ttl
+	default:
+		log.Debugln("[DNS] response msg empty: %#v", msg)
 		return
 	}
-	c.SetWithExpire(key, msg.Copy(), time.Now().Add(time.Duration(ttl)*time.Second))
+
+	c.SetWithExpire(key, msg.Copy(), time.Now().Add(time.Second*time.Duration(ttl)))
 }
 
 func setMsgTTL(msg *D.Msg, ttl uint32) {
@@ -72,12 +40,6 @@ func setMsgTTL(msg *D.Msg, ttl uint32) {
 	for _, extra := range msg.Extra {
 		extra.Header().Ttl = ttl
 	}
-}
-
-func updateMsgTTL(msg *D.Msg, ttl uint32) {
-	updateTTL(msg.Answer, ttl)
-	updateTTL(msg.Ns, ttl)
-	updateTTL(msg.Extra, ttl)
 }
 
 func isIPRequest(q D.Question) bool {
@@ -101,6 +63,8 @@ func transform(servers []NameServer, resolver *Resolver) []dnsClient {
 			Client: &D.Client{
 				Net: s.Net,
 				TLSConfig: &tls.Config{
+					// alpn identifier, see https://tools.ietf.org/html/draft-hoffman-dprive-dns-tls-alpn-00#page-6
+					NextProtos: []string{"dns"},
 					ServerName: host,
 				},
 				UDPSize: 4096,
@@ -139,32 +103,4 @@ func msgToIP(msg *D.Msg) []net.IP {
 	}
 
 	return ips
-}
-
-func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.Msg, err error) {
-	fast, ctx := picker.WithContext(ctx)
-	for _, client := range clients {
-		r := client
-		fast.Go(func() (any, error) {
-			m, err := r.ExchangeContext(ctx, m)
-			if err != nil {
-				return nil, err
-			} else if m.Rcode == D.RcodeServerFailure || m.Rcode == D.RcodeRefused {
-				return nil, errors.New("server failure")
-			}
-			return m, nil
-		})
-	}
-
-	elm := fast.Wait()
-	if elm == nil {
-		err := errors.New("all DNS requests failed")
-		if fErr := fast.Error(); fErr != nil {
-			err = fmt.Errorf("%w, first error: %s", err, fErr.Error())
-		}
-		return nil, err
-	}
-
-	msg = elm.(*D.Msg)
-	return
 }

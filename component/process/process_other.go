@@ -1,11 +1,9 @@
-//go:build !darwin && !linux && !windows && !freebsd
+//go:build !darwin && !linux && !windows && (!freebsd || !amd64)
 
 package process
 
-import (
-	"net/netip"
-)
+import "net"
 
-func findProcessPath(_ string, _, _ netip.AddrPort) (string, error) {
+func findProcessName(network string, ip net.IP, srcPort int) (string, error) {
 	return "", ErrPlatformNotSupport
 }

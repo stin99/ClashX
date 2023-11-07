@@ -2,6 +2,7 @@ package mixed
 
 import (
 	"net"
+	"time"
 
 	"github.com/Dreamacro/clash/common/cache"
 	N "github.com/Dreamacro/clash/common/net"
@@ -15,7 +16,7 @@ import (
 type Listener struct {
 	listener net.Listener
 	addr     string
-	cache    *cache.LruCache
+	cache    *cache.Cache
 	closed   bool
 }
 
@@ -35,7 +36,7 @@ func (l *Listener) Close() error {
 	return l.listener.Close()
 }
 
-func New(addr string, in chan<- C.ConnContext) (C.Listener, error) {
+func New(addr string, in chan<- C.ConnContext) (*Listener, error) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, err
@@ -44,7 +45,7 @@ func New(addr string, in chan<- C.ConnContext) (C.Listener, error) {
 	ml := &Listener{
 		listener: l,
 		addr:     addr,
-		cache:    cache.New(cache.WithAge(30)),
+		cache:    cache.New(30 * time.Second),
 	}
 	go func() {
 		for {
@@ -62,7 +63,7 @@ func New(addr string, in chan<- C.ConnContext) (C.Listener, error) {
 	return ml, nil
 }
 
-func handleConn(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
+func handleConn(conn net.Conn, in chan<- C.ConnContext, cache *cache.Cache) {
 	conn.(*net.TCPConn).SetKeepAlive(true)
 
 	bufConn := N.NewBufferedConn(conn)

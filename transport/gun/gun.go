@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Dreamacro/clash/common/pool"
+	C "github.com/Dreamacro/clash/constant"
 
 	"go.uber.org/atomic"
 	"golang.org/x/net/http2"
@@ -126,11 +127,11 @@ func (g *Conn) Write(b []byte) (n int, err error) {
 	grpcPayloadLen := uint32(varuintSize + 1 + len(b))
 	binary.BigEndian.PutUint32(grpcHeader[1:5], grpcPayloadLen)
 
-	buf := pool.GetBytesBuffer()
-	defer pool.PutBytesBuffer(buf)
-	buf.PutSlice(grpcHeader)
-	buf.PutSlice(protobufHeader[:varuintSize+1])
-	buf.PutSlice(b)
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
+	buf.Write(grpcHeader)
+	buf.Write(protobufHeader[:varuintSize+1])
+	buf.Write(b)
 
 	_, err = g.writer.Write(buf.Bytes())
 	if err == io.ErrClosedPipe && g.err != nil {
@@ -167,13 +168,17 @@ func (g *Conn) SetDeadline(t time.Time) error {
 }
 
 func NewHTTP2Client(dialFn DialFn, tlsConfig *tls.Config) *http2.Transport {
-	dialFunc := func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+	dialFunc := func(network, addr string, cfg *tls.Config) (net.Conn, error) {
 		pconn, err := dialFn(network, addr)
 		if err != nil {
 			return nil, err
 		}
 
 		cn := tls.Client(pconn, cfg)
+
+		// fix tls handshake not timeout
+		ctx, cancel := context.WithTimeout(context.Background(), C.DefaultTLSTimeout)
+		defer cancel()
 		if err := cn.HandshakeContext(ctx); err != nil {
 			pconn.Close()
 			return nil, err
@@ -187,7 +192,7 @@ func NewHTTP2Client(dialFn DialFn, tlsConfig *tls.Config) *http2.Transport {
 	}
 
 	return &http2.Transport{
-		DialTLSContext:     dialFunc,
+		DialTLS:            dialFunc,
 		TLSClientConfig:    tlsConfig,
 		AllowHTTP:          false,
 		DisableCompression: true,

@@ -3,14 +3,15 @@ package constant
 import (
 	"encoding/json"
 	"net"
-	"net/netip"
 	"strconv"
-
-	"github.com/Dreamacro/clash/transport/socks5"
 )
 
 // Socks addr type
 const (
+	AtypIPv4       = 1
+	AtypDomainName = 3
+	AtypIPv6       = 4
+
 	TCP NetWork = iota
 	UDP
 
@@ -20,7 +21,6 @@ const (
 	SOCKS5
 	REDIR
 	TPROXY
-	TUNNEL
 )
 
 type NetWork int
@@ -52,8 +52,6 @@ func (t Type) String() string {
 		return "Redir"
 	case TPROXY:
 		return "TProxy"
-	case TUNNEL:
-		return "Tunnel"
 	default:
 		return "Unknown"
 	}
@@ -65,37 +63,24 @@ func (t Type) MarshalJSON() ([]byte, error) {
 
 // Metadata is used to store connection address
 type Metadata struct {
-	NetWork      NetWork `json:"network"`
-	Type         Type    `json:"type"`
-	SrcIP        net.IP  `json:"sourceIP"`
-	DstIP        net.IP  `json:"destinationIP"`
-	SrcPort      Port    `json:"sourcePort"`
-	DstPort      Port    `json:"destinationPort"`
-	Host         string  `json:"host"`
-	DNSMode      DNSMode `json:"dnsMode"`
-	ProcessPath  string  `json:"processPath"`
-	SpecialProxy string  `json:"specialProxy"`
-
-	OriginDst netip.AddrPort `json:"-"`
+	NetWork     NetWork `json:"network"`
+	Type        Type    `json:"type"`
+	SrcIP       net.IP  `json:"sourceIP"`
+	DstIP       net.IP  `json:"destinationIP"`
+	SrcPort     string  `json:"sourcePort"`
+	DstPort     string  `json:"destinationPort"`
+	AddrType    int     `json:"-"`
+	Host        string  `json:"host"`
+	DNSMode     DNSMode `json:"dnsMode"`
+	ProcessPath string  `json:"processPath"`
 }
 
 func (m *Metadata) RemoteAddress() string {
-	return net.JoinHostPort(m.String(), m.DstPort.String())
+	return net.JoinHostPort(m.String(), m.DstPort)
 }
 
 func (m *Metadata) SourceAddress() string {
-	return net.JoinHostPort(m.SrcIP.String(), m.SrcPort.String())
-}
-
-func (m *Metadata) AddrType() int {
-	switch true {
-	case m.Host != "" || m.DstIP == nil:
-		return socks5.AtypDomainName
-	case m.DstIP.To4() != nil:
-		return socks5.AtypIPv4
-	default:
-		return socks5.AtypIPv6
-	}
+	return net.JoinHostPort(m.SrcIP.String(), m.SrcPort)
 }
 
 func (m *Metadata) Resolved() bool {
@@ -108,6 +93,11 @@ func (m *Metadata) Pure() *Metadata {
 	if m.DNSMode == DNSMapping && m.DstIP != nil {
 		copy := *m
 		copy.Host = ""
+		if copy.DstIP.To4() != nil {
+			copy.AddrType = AtypIPv4
+		} else {
+			copy.AddrType = AtypIPv6
+		}
 		return &copy
 	}
 
@@ -118,9 +108,10 @@ func (m *Metadata) UDPAddr() *net.UDPAddr {
 	if m.NetWork != UDP || m.DstIP == nil {
 		return nil
 	}
+	port, _ := strconv.ParseUint(m.DstPort, 10, 16)
 	return &net.UDPAddr{
 		IP:   m.DstIP,
-		Port: int(m.DstPort),
+		Port: int(port),
 	}
 }
 
@@ -136,15 +127,4 @@ func (m *Metadata) String() string {
 
 func (m *Metadata) Valid() bool {
 	return m.Host != "" || m.DstIP != nil
-}
-
-// Port is used to compatible with old version
-type Port uint16
-
-func (n Port) MarshalJSON() ([]byte, error) {
-	return json.Marshal(n.String())
-}
-
-func (n Port) String() string {
-	return strconv.FormatUint(uint64(n), 10)
 }

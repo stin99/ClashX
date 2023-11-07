@@ -9,9 +9,13 @@ import (
 	"github.com/Dreamacro/clash/log"
 )
 
-var printMarkWarn = sync.OnceFunc(func() {
-	log.Warnln("Routing mark on socket is not supported on current platform")
-})
+var printMarkWarnOnce sync.Once
+
+func printMarkWarn() {
+	printMarkWarnOnce.Do(func() {
+		log.Warnln("Routing mark on socket is not supported on current platform")
+	})
+}
 
 func bindMarkToDialer(mark int, dialer *net.Dialer, _ string, _ net.IP) {
 	printMarkWarn()

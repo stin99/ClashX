@@ -1,14 +1,14 @@
 package outbound
 
 import (
+	"bytes"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/Dreamacro/clash/component/resolver"
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/transport/socks5"
-
-	"github.com/Dreamacro/protobytes"
 )
 
 func tcpKeepAlive(c net.Conn) {
@@ -19,23 +19,23 @@ func tcpKeepAlive(c net.Conn) {
 }
 
 func serializesSocksAddr(metadata *C.Metadata) []byte {
-	buf := protobytes.BytesWriter{}
-
-	addrType := metadata.AddrType()
-	buf.PutUint8(uint8(addrType))
-
-	switch addrType {
+	var buf [][]byte
+	aType := uint8(metadata.AddrType)
+	p, _ := strconv.ParseUint(metadata.DstPort, 10, 16)
+	port := []byte{uint8(p >> 8), uint8(p & 0xff)}
+	switch metadata.AddrType {
 	case socks5.AtypDomainName:
-		buf.PutUint8(uint8(len(metadata.Host)))
-		buf.PutString(metadata.Host)
+		len := uint8(len(metadata.Host))
+		host := []byte(metadata.Host)
+		buf = [][]byte{{aType, len}, host, port}
 	case socks5.AtypIPv4:
-		buf.PutSlice(metadata.DstIP.To4())
+		host := metadata.DstIP.To4()
+		buf = [][]byte{{aType}, host, port}
 	case socks5.AtypIPv6:
-		buf.PutSlice(metadata.DstIP.To16())
+		host := metadata.DstIP.To16()
+		buf = [][]byte{{aType}, host, port}
 	}
-
-	buf.PutUint16be(uint16(metadata.DstPort))
-	return buf.Bytes()
+	return bytes.Join(buf, nil)
 }
 
 func resolveUDPAddr(network, address string) (*net.UDPAddr, error) {

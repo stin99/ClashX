@@ -32,7 +32,7 @@ func (l *UDPListener) Close() error {
 	return l.packetConn.Close()
 }
 
-func NewUDP(addr string, in chan<- *inbound.PacketAdapter) (C.Listener, error) {
+func NewUDP(addr string, in chan<- *inbound.PacketAdapter) (*UDPListener, error) {
 	l, err := net.ListenPacket("udp", addr)
 	if err != nil {
 		return nil, err
@@ -72,11 +72,6 @@ func NewUDP(addr string, in chan<- *inbound.PacketAdapter) (C.Listener, error) {
 			if err != nil {
 				continue
 			}
-
-			if rAddr.Addr().Is4() {
-				// try to unmap 4in6 address
-				lAddr = netip.AddrPortFrom(lAddr.Addr().Unmap(), lAddr.Port())
-			}
 			handlePacketConn(in, buf[:n], lAddr, rAddr)
 		}
 	}()
@@ -91,7 +86,7 @@ func handlePacketConn(in chan<- *inbound.PacketAdapter, buf []byte, lAddr, rAddr
 		buf:   buf,
 	}
 	select {
-	case in <- inbound.NewPacket(target, target.UDPAddr(), pkt, C.TPROXY):
+	case in <- inbound.NewPacket(target, pkt, C.TPROXY):
 	default:
 	}
 }

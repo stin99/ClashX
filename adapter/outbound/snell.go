@@ -53,7 +53,8 @@ func streamConn(c net.Conn, option streamOption) *snell.Snell {
 // StreamConn implements C.ProxyAdapter
 func (s *Snell) StreamConn(c net.Conn, metadata *C.Metadata) (net.Conn, error) {
 	c = streamConn(c, streamOption{s.psk, s.version, s.addr, s.obfsOption})
-	err := snell.WriteHeader(c, metadata.String(), uint(metadata.DstPort), s.version)
+	port, _ := strconv.ParseUint(metadata.DstPort, 10, 16)
+	err := snell.WriteHeader(c, metadata.String(), uint(port), s.version)
 	return c, err
 }
 
@@ -65,7 +66,8 @@ func (s *Snell) DialContext(ctx context.Context, metadata *C.Metadata, opts ...d
 			return nil, err
 		}
 
-		if err = snell.WriteHeader(c, metadata.String(), uint(metadata.DstPort), s.version); err != nil {
+		port, _ := strconv.ParseUint(metadata.DstPort, 10, 16)
+		if err = snell.WriteHeader(c, metadata.String(), uint(port), s.version); err != nil {
 			c.Close()
 			return nil, err
 		}
@@ -78,9 +80,7 @@ func (s *Snell) DialContext(ctx context.Context, metadata *C.Metadata, opts ...d
 	}
 	tcpKeepAlive(c)
 
-	defer func(c net.Conn) {
-		safeConnClose(c, err)
-	}(c)
+	defer safeConnClose(c, err)
 
 	c, err = s.StreamConn(c, metadata)
 	return NewConn(c, s), err
